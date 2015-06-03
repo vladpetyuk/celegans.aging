@@ -1,13 +1,22 @@
 Package: celegans.aging
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Aging-Related Changes of C. elegans Proteome
 Version: 0.1
 Date: 2015-05-29
-Author: Who wrote it
-Maintainer: Who to complain to <yourfault@somewhere.net>
-Description: More about what it does (maybe more than one line)
-License: What license is it under?
+Author: Vlad Petyuk
+Maintainer: Vlad Petyuk <vladislav.petyuk@pnnl.gov>
+Description: The packages introduces a collection of LC-MS/MS datasets
+            obtained on Caenorhabditis elegans nematodes at different times
+            of their lifespan. The discovery of differentially abundant proteins
+            was performed using spectral counting approach. Interrogation of
+            common biological functions of the proteins with altered abundance
+            revealed up-regulation of DNA/RNA-related pathways and
+            down-regulation of metabolic pathways (e.g. glycolysis and
+            glyconeogenesis)
+License: Artistic-2.0
 LazyData: TRUE
 Depends: R (>=3.2.0)
-Suggests: BiocStyle, knitr, rpx, jsonlite, xtable
+Suggests: BiocStyle, knitr, rpx, jsonlite, xtable, MSnID, MSnbase, biomaRt,
+            msmsTests, GOstats, org.Ce.eg.db, ReactomePA (>=1.12.2),
+            DOSE (>=2.6.3), graphite, KEGGREST, pathview
 VignetteBuilder: knitr
