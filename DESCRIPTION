@@ -1,0 +1,13 @@
+Package: celegans.aging
+Type: Package
+Title: What the Package Does (Title Case)
+Version: 0.1
+Date: 2015-05-29
+Author: Who wrote it
+Maintainer: Who to complain to <yourfault@somewhere.net>
+Description: More about what it does (maybe more than one line)
+License: What license is it under?
+LazyData: TRUE
+Depends: R (>=3.2.0)
+Suggests: BiocStyle, knitr, rpx, jsonlite, xtable
+VignetteBuilder: knitr

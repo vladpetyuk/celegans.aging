@@ -1,0 +1,606 @@
+%\VignettePackage{celegans.aging}
+%\VignetteIndexEntry{celegans.aging}
+%\VignetteDepends{rpx, jsonlite, xtable, BiocStyle, MSnID, MSnbase, biomaRt, msmsTests, GOstats, org.Ce.eg.db, ReactomePA, DOSE, graphite, KEGGREST, pathview}
+%\VignetteKeywords{Documentation}
+%\VignetteEngine{knitr::knitr}
+
+\documentclass[11pt]{article}
+\usepackage[authoryear,round]{natbib}
+% \usepackage{hyperref} % conflict with BiocStyle
+\usepackage{booktabs}
+\usepackage{colortbl, xcolor}
+\usepackage{rotating}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{makecell}
+\usepackage[T1]{fontenc}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{caption}
+
+\renewcommand{\rothead}[2][60]{\makebox[9mm][c]{\rotatebox{#1}{\makecell[c]{#2}}}}
+
+<<style-knitr, eval=TRUE, echo=FALSE, results="asis">>=
+BiocStyle::latex(use.unsrturl=FALSE)
+@
+
+
+
+\title{Age-Related Proteome Changes in \textit{Caenorhabditis elegans}}
+\author{}
+\date{}
+
+
+%~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<<init, results='hide', echo=FALSE>>=
+knitr::opts_chunk$set(comment='', echo=FALSE, message=FALSE, warning=FALSE)
+
+library("xtable")
+# ?print.xtable
+xtable2 <- function(x, col.lab.rot=FALSE, ...){
+    rws <- seq(1, (nrow(x)-1), by = 2)
+    col <- rep("\\rowcolor[gray]{0.95}", length(rws))
+    add.to.row = list(pos = as.list(rws), command = col)
+    include.colnames = TRUE
+    if(col.lab.rot){
+        add.to.row$pos <- c(0, add.to.row$pos)
+        cols <- paste0("\\rothead{",colnames(x),"}", collapse = " & ")
+        cols <- paste0("\\rothead{} & ", cols, "\\\\")
+        add.to.row$command <- c(cols, add.to.row$command)
+        include.colnames = FALSE
+    }
+    print(xtable(x),
+          booktabs = TRUE,
+          add.to.row = add.to.row,
+          include.colnames = include.colnames,
+          ...)
+}
+@
+
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Study design}
+This document describes new analysis of the previously published data
+\cite{Depuydt2013,Depuydt2014}.  The PRIDE identifier of the deposited datasests:
+\href{http://proteomecentral.proteomexchange.org/dataset/PXD002161}{PXD002161}.
+The study design is based on three independent factors: age, diet and genotype.
+Age factor has two levels: young and old.  Diet is either fully fed or
+calorie restricted. The two genotypes used in the study are the long-living worm
+\textit{glp-4(bn2ts); daf-2(e1370)} and normal-living
+\textit{glp-4(bn2ts) daf-16(mgDf50); daf-2(e1370)}.  Three independent factors
+with two levels each results in 8 combinations.  Each combination was analyzed
+in 5 biological (starting from independent worm cultivation) replicates resulting
+in total $8 \times 5 = 40$ datasets (Table \ref{tab:big}).\\
+Below we will focus on comparing 5 young vs 5 old worm culture replicates with normal-living genotype (Mut: \textit{glp-4(bn2ts) daf-16(mgDf50); daf-2(e1370)}) grown with no dietary restriction (Diet: fully fed). The dataset names along with
+PRIDE assay IDs shown in Table \ref{tab:meta}.
+\\
+\warning{perhaps I want to insert a study design figure here.  not 100\% sure yet}
+\\
+Here we applied spectral counting approach to estimate relative protein
+abundances.  Further we explored pathways enriched amongst proteins
+statistically significanly decreased during aging.
+\\
+
+<<fetchingMetaData, echo=FALSE, results='hide', warning=FALSE, message=FALSE>>=
+library("rpx")
+id <- "PXD002161"
+px <- PXDataset(id)
+try(setInternet2(FALSE),silent=TRUE)
+library("jsonlite")
+addr <- "http://www.ebi.ac.uk:80/pride/ws/archive/%s/list/project/%s"
+files <- fromJSON(sprintf(addr, "file", id))$list
+assays <- fromJSON(sprintf(addr, "assay", id))$list
+files <- subset(files, grepl('mzid.gz', fileName),
+                select=c("assayAccession","fileName"))
+rownames(files) <- NULL
+assays <- assays[,c("assayAccession",
+                    "experimentalFactor",
+                    "proteinCount",
+                    "peptideCount",
+                    "uniquePeptideCount",
+                    "identifiedSpectrumCount",
+                    "totalSpectrumCount")]
+@
+
+\begin{table}[hp]
+\centering
+\begin{minipage}[c]{.05\linewidth}
+\rotcaption{Overview of The Data available at PXD002161}
+\label{tab:big}
+\end{minipage}
+\begin{minipage}[c]{.8\linewidth}
+\begin{turn}{90}
+<<showAllAssays, results='asis', echo=FALSE>>=
+xtable2(assays, include.rownames=TRUE, size='tiny',
+        floating=F, col.lab.rot=TRUE)
+@
+\end{turn}
+\end{minipage}
+\end{table}
+
+
+<<subsetAssays, echo=FALSE, results='hide', message=FALSE>>=
+pttrn <- "Diet; fully fed, Mut: glp-4(bn2ts) daf-16(mgDf50); daf-2(e1370)"
+assays <- subset(assays, grepl(pttrn, experimentalFactor, fixed=T))
+assays <- with(assays, {data.frame(assayAccession,
+                       phenotype=sub("Age:\\s([^,]*).*", "\\1",
+                                     experimentalFactor),
+                       sampleName=sub(".*Name:\\s(\\w)-ctrl-FF.(\\d)", "\\1.\\2",
+                                      experimentalFactor),
+                       stringsAsFactors=F)})
+files <- subset(files, assayAccession %in% assays$assayAccession)
+pxget(px, files$fileName) # fetch them from PRIDE
+files$datasetName <- sub('_msgfplus.mzid.gz','',files$fileName, fixed=T)
+meta <- merge(files[,c("assayAccession","datasetName")], assays)
+rownames(meta) <- meta$datasetName
+meta <- meta[order(meta$sampleName),]
+rownames(meta) <- NULL
+@
+
+\begin{table}[htb]
+\centering
+\caption{Meta data}
+\label{tab:meta}
+<<showAssays, results='asis', echo=FALSE>>=
+xtable2(meta, include.rownames=TRUE, size='footnotesize', floating=F)
+@
+\end{table}
+%--------- end section ---------------------------------------------------------
+
+
+
+
+
+
+\section{MS/MS data filtering}
+<<msmsFilering, echo=FALSE, message=FALSE>>=
+library("MSnID")
+prj <- MSnID()
+prj <- read_mzIDs(object = prj, mzids = files$fileName)
+prj <- assess_termini(prj)
+prj <- assess_missed_cleavages(prj)
+prj <- apply_filter(prj, "numIrregCleavages == 0")
+prj <- apply_filter(prj, "numMissCleavages < 2")
+prj$msmsScore <- -log10(prj$`MS-GF:SpecEValue`)
+prj <- correct_peak_selection(prj)
+prj$massError <- abs(mass_measurement_error(prj)) # ppm
+fObj <- MSnIDFilter(prj)
+fObj$msmsScore <- list(comparison=">", threshold=7.0)
+fObj$massError <- list(comparison="<", threshold=20)
+fObj.grid <- optimize_filter(fObj, prj, fdr.max=0.01,
+                             method="Grid", level="peptide", n.iter=5000)
+set.seed(0)
+fObj.sann <- optimize_filter(fObj.grid, prj, fdr.max=0.01,
+                             method="SANN", level="peptide", n.iter=5000)
+prj <- apply_filter(prj, fObj.sann)
+@
+
+The peptide-to-spectrum matches were produced by
+\href{http://omics.pnl.gov/software/ms-gf}{MS-GF+} MS/MS search
+engine \cite{Kim2014}. mzIdentML files were downloaded directly from PRIDE.
+For enriching MS/MS identifications with true matches we relied on two
+filtering criteria:
+\begin{itemize}
+    \item $msmsScore = -log10(`MS-GF:SpecEValue`)$
+    \item $massError$ is the absolute value of mass measurement error (in ppm)
+                        of the precursor ion
+\end{itemize}
+The MS/MS filter was optimized to achive maximum number of identifications
+while not exceeding 1\% false discovery rate (FDR) at the unique peptide
+sequence level. The FDR was estimated using reversed protein sequence database.
+<<msmsFilteringFilter, echo=FALSE>>=
+show(fObj.sann)
+@
+<<msmsFilteringFDRs, echo=FALSE>>=
+show(prj)
+@
+<<msmsFiltering2, echo=FALSE>>=
+# remove contaminants and reverse hits
+prj <- apply_filter(prj, "!grepl('Contaminant', accession)")
+prj <- apply_filter(prj, "!grepl('XXX_', accession)")
+@
+After removing contaminant and reverse protein sequences, the number of proteins
+based on WORMPEP IDs reduced down to \textbf{\Sexpr{length(accessions(prj))}}.
+
+<<remapToEntrez, echo=FALSE>>=
+# remap wormpep ids to entrez ids
+library("biomaRt")
+ens <- useMart("ensembl")
+ens.cel <- useDataset("celegans_gene_ensembl", mart=ens)
+wormpep2entrez    <- getBM(attributes=c("wormpep_id","entrezgene"),
+                           filters=c("wormpep_id"),
+                           values=proteins(prj), mart=ens.cel)
+# remove non-annotated proteins
+wormpep2entrez <- subset(wormpep2entrez, !is.na(entrezgene))
+# reorder and retain just the first EntrezGeneID if protein match multiple genes
+wormpep2entrez <- wormpep2entrez[with(wormpep2entrez,
+                                      order(wormpep_id, entrezgene)),]
+wormpep2entrez <- wormpep2entrez[with(wormpep2entrez,
+                                      !duplicated(wormpep_id)),]
+new.psms <- merge(psms(prj), wormpep2entrez, by.x="accession", by.y="wormpep_id")
+new.psms$wormpep_id <- new.psms$accession
+new.psms$accession <- new.psms$entrezgene
+psms(prj) <- new.psms
+@
+The protein WORMPEP IDs were re-mapped to \textbf{\Sexpr{length(accessions(prj))}} Entrez gene IDs using \href{http://www.biomart.org/}{\textbf{Biomart}} web-service.
+
+<<toMSnSet, message=FALSE>>=
+suppressPackageStartupMessages(library("MSnbase"))
+mset <- as(prj, "MSnSet")
+# take care of pheno data
+sampleNames(mset) <- sub('.mzML', '', sampleNames(mset), fixed=T)
+rownames(meta) <- meta$datasetName
+pData(mset) <- meta[sampleNames(mset),]
+sampleNames(mset) <- pData(mset)$sampleName
+# roll-up to gene level
+mset <- combineFeatures(mset, groupBy = fData(mset)$accession,
+                        fun = 'sum', cv=F, redundancy.handler = 'unique')
+@
+The peptides counts were summed within each gene. Only uniquely mapping peptides
+used for gene abundance estimated. The final number of genes that contained unique peptides is \textbf{\Sexpr{nrow(mset)}}.
+%--------- end section ---------------------------------------------------------
+
+
+
+
+
+
+\section{Statistical tests}
+<<quasiLikelihoodTest, echo=FALSE>>=
+library("msmsTests")
+alt.f <- "y ~ phenotype + 1"
+null.f <- "y ~ 1"
+# ensure the order of the phenotype levels: young - first, old - second
+mset$phenotype <- factor(mset$phenotype, levels=c('young','old'))
+div <- colSums(exprs(mset)) # normalization factor
+res <- msms.glm.qlll(mset, alt.f, null.f, facs=pData(mset), div=div)
+res$p.val.adj <- p.adjust(res$p.value)
+fData(mset) <- cbind(fData(mset), res)  # not 100% sure if it is a good idea
+lst <- test.results(res, mset, pData(mset)$phenotype,
+                    "wt","mut", div, alpha=0.05,
+                    minSpC=2, minLFC=1, method="BH")
+regulated <- subset(lst$tres, adjp < 0.05 & abs(LogFC) > log2(4))
+regulated.up <- subset(regulated, LogFC > 0)
+regulated.down <- subset(regulated, LogFC < 0)
+@
+We applied quasi-likelihood Poisson test \cite{Li2010} to identify proteins differentially abundant between worms at young and old ages.  P-value histogram
+(Figure \ref{fig:pval}) significantly deviates from uniform distribution indicating on substantial number of differentially abundant proteins.  Adjustment of the p-value was performed taking into an account effect size as has been suggested earlier \cite{Gregori2013}.  Overall \textbf{\Sexpr{nrow(regulated)}}
+proteins have changed more then two-fold and passed the 5\% FDR threshold.
+Of those \textbf{\Sexpr{nrow(regulated.up)}}
+increased and \textbf{\Sexpr{nrow(regulated.down)}}
+decreased in abundance with age (Figure \ref{fig:volcano}).
+%' <<quasiLikelihoodTest-visualization, echo=FALSE, fig.align='center', out.width='.45\\textwidth', fig.width=4, fig.height=4, fig.cap='p-value histogram', fig.lp='pval'>>=
+%' hist(res$p.value, 50)
+%' # res.volcanoplot(lst$tres, min.LFC=1, max.pval=0.05, ylbls=NULL, maxy=4)
+%' @
+
+
+\begin{figure}[!h]
+<<quasiLikelihoodTest-pvalhist, echo=FALSE, fig.width=4, fig.height=4, fig.keep='last', out.width='.4\\linewidth', dev='pdf', fig.align='center'>>=
+hist(res$p.value, 50, main='', xlab='p-value', ylab='frequency')
+# res.volcanoplot(lst$tres, min.LFC=1, max.pval=0.05, ylbls=NULL, maxy=4)
+@
+\caption{P-value distribution histogram}
+\label{fig:pval}
+\end{figure}
+
+\begin{figure}[!h]
+<<quasiLikelihoodTest-volcano, echo=FALSE, fig.width=4, fig.height=4, fig.keep='last', out.width='.4\\linewidth', dev='pdf', fig.align='center'>>=
+res.volcanoplot(lst$tres, min.LFC=1, max.pval=0.05, ylbls=NULL, maxy=4)
+@
+\caption{Volcano plot}
+\label{fig:volcano}
+\end{figure}
+
+
+
+%' \begin{wrapfigure}{r}{0.5\textwidth}
+%' \begin{center}
+%' <<quasiLikelihoodTest-visualization, echo=FALSE, fig.width=4, fig.height=4, fig.keep='last', out.width='.4\\linewidth', dev='pdf', fig.align='center'>>=
+%' hist(res$p.value, 50, main='', xlab='p-value', ylab='frequency')
+%' # res.volcanoplot(lst$tres, min.LFC=1, max.pval=0.05, ylbls=NULL, maxy=4)
+%' @
+%' \caption{P-value distribution histogram}
+%' \end{center}
+%' \label{fig:pval}
+%' \end{wrapfigure}
+
+
+
+%' \begin{figure}[!ht]
+%' <<mqplot, dev='pdf', echo=TRUE, fig.width=7, fig.height=5.5, fig.keep='last', out.width='.6\\linewidth'>>=
+%' plot(s)
+%' @
+%' \caption{Spectrum plotting in \CRANpkg{MALDIquant}.}
+%' \label{fig:mqplot}
+%' \end{figure}
+
+
+
+
+\section{Pathway analysis}
+\subsection{GO and KEGG annotation enrichment}
+To identify common themes amongst the proteins increased and decreased in
+abundance with age we questioned if there is any over-representation of
+GO biological processes ontology terms or KEGG-annotated pathways. The results
+of annotation enrichment tests are presented in the Tables
+\ref{tab:gobpup}, \ref{tab:gobpdown}, \ref{tab:keggup} and \ref{tab:keggdown}.
+A significant uptrend in protein abundances involve nuclein acid maintanance pathways. A global downtrend involved general metabolic pathways (e.g. glycolysis).
+
+\begin{table}[!h]
+\centering
+\caption{GO BP of up-regulated (top 5)}
+\label{tab:gobpup}
+<<go-enrichment-up, results='asis', echo=FALSE>>=
+library("GOstats")
+library("org.Ce.eg.db")
+p <- new("GOHyperGParams",
+         geneIds=rownames(regulated.up),
+         universeGeneIds=featureNames(mset),
+         pvalueCutoff = 1,
+         annotation="org.Ce.eg.db",
+         conditional=FALSE,
+         testDirection="over",
+         ontology="BP")
+hyp <- hyperGTest(p) # <- main testing function
+ps <- summary(hyp)
+ps$Pvalue.adj <- p.adjust(ps[,"Pvalue"])
+xtable2(head(ps, 5), floating=F, include.rownames=FALSE, size='footnotesize')
+@
+\end{table}
+
+\begin{table}[!h]
+\centering
+\caption{GO BP of down-regulated (top 5)}
+\label{tab:gobpdown}
+<<go-enrichment-down, results='asis', echo=FALSE>>=
+p <- new("GOHyperGParams",
+         geneIds=rownames(regulated.down),
+         universeGeneIds=featureNames(mset),
+         pvalueCutoff = 1,
+         annotation="org.Ce.eg.db",
+         conditional=FALSE,
+         testDirection="over",
+         ontology="BP")
+hyp <- hyperGTest(p) # <- main testing function
+ps <- summary(hyp)
+ps$Pvalue.adj <- p.adjust(ps[,"Pvalue"])
+xtable2(head(ps, 5), floating=F, include.rownames=FALSE, size='footnotesize')
+@
+\end{table}
+
+
+\begin{table}[!h]
+\centering
+\caption{KEGG of up-regulated (top 5)}
+\label{tab:keggup}
+<<kegg-enrichment-up, results='asis', echo=FALSE>>=
+p <- new("KEGGHyperGParams",
+         geneIds=rownames(regulated.up),
+         universeGeneIds=featureNames(mset),
+         pvalueCutoff = 1,
+         annotation="org.Ce.eg.db",
+         testDirection="over")
+hyp <- hyperGTest(p) # <- main testing function
+ps <- summary(hyp)
+ps$Pvalue.adj <- p.adjust(ps[,"Pvalue"])
+xtable2(head(ps, 5), floating=F, include.rownames=FALSE, size='footnotesize')
+@
+\end{table}
+
+
+\begin{table}[!h]
+\centering
+\caption{KEGG of down-regulated (top 5)}
+\label{tab:keggdown}
+<<kegg-enrichment-down, results='asis', echo=FALSE>>=
+p <- new("KEGGHyperGParams",
+         geneIds=rownames(regulated.down),
+         universeGeneIds=featureNames(mset),
+         pvalueCutoff = 1,
+         annotation="org.Ce.eg.db",
+         testDirection="over")
+hyp <- hyperGTest(p) # <- main testing function
+ps <- summary(hyp)
+ps$Pvalue.adj <- p.adjust(ps[,"Pvalue"])
+xtable2(head(ps, 5), floating=F, include.rownames=FALSE, size='footnotesize')
+@
+\end{table}
+
+%'
+%' <<reactome->>=
+%' library("ReactomePA")
+%' x <- enrichPathway(gene = rownames(regulated),
+%'                    pvalueCutoff=1,
+%'                    organism = "celegans",
+%'                    readable=TRUE,
+%'                    universe = featureNames(mset))
+%' head(summary(x))
+%' barplot(x)
+%' @
+%'
+
+\subsection{GSEA analysis}
+Alternatively, we performed gene-set enrichment analysis that points to
+overall upregulated and downregulated pathways regardless of statistical
+significance of individual proteins.  The results are summarized in the
+Table \ref{tab:gsea}.  In general the results agree with aforementioned
+GO BP and KEGG annotation enrichment analysis that proteins involved in
+small molecule metabolism decline in abundance, while protein involved in
+DNA/RNA metabolism increase in abundance. Relating and grouping
+the enriched Reactome pathways forms five clusters: DNA/Cell cycle, translation,
+mRNA splicing, metabolism and glucose metabolism (Figure \ref{fig:gsea-map}).
+Figures \ref{fig:gsea-path-up} and \ref{fig:gsea-path-down} show examples
+of GSEA enrichment scores for down-regulated glycolysis and up-regulated mRNA splicing pathways. Figures \ref{fig:kegg-native-00010} and
+\ref{fig:kegg-native-03040} map the relative protein abundance changes on the
+KEGG pathway maps.
+
+<<gsea, cache=TRUE, cache.vars=c('y','res','foldChange')>>=
+foldChange <- fData(mset)$LogFC
+names(foldChange) <- featureNames(mset)
+library("ReactomePA") # gsePathway
+library("DOSE") # geneList, enrichMaps
+set.seed(0, "L'Ecuyer-CMRG")
+y <- gsePathway(sort(foldChange, decreasing = T),
+                nPerm=20000, organism="celegans",
+                minGSSize=10, pvalueCutoff=0.01,
+                pAdjustMethod="BH", verbose=F)
+res <- summary(y)
+@
+
+% for some reason I need to engage those cached variables to become visible
+% in the downstream chunks
+<<test, echo=FALSE, results='hide'>>=
+print(y)
+print(res)
+print(foldChange)
+@
+
+\begin{table}[!h]
+\centering
+\caption{GSEA results}
+<<gsea-table, results='asis', echo=FALSE>>=
+res.ord <- res[with(res, order(abs(enrichmentScore), decreasing = T)),]
+res.ord <- res.ord[,c('ID','Description','setSize','enrichmentScore','p.adjust')]
+xtable2(res.ord, floating=F, include.rownames=FALSE, size='footnotesize')
+@
+\label{tab:gsea}
+\end{table}
+
+
+\begin{figure}[!h]
+<<gsea-map, echo=FALSE, fig.width=11, fig.height=11, fig.keep='last', out.width='.5\\textwidth', dev='pdf', fig.align='center'>>=
+enrichMap(y)
+@
+\caption{Map of GSEA enriched Reactome pathways. Color of the node correlates
+        with significance of the enrichment (light red has close to threshold
+        significance),
+Gradient of light red to dark
+        red indicates on the significance (p-value) of the pathway.}
+\label{fig:gsea-map}
+\end{figure}
+
+\begin{figure}[!h]
+<<gsea-path-down, echo=FALSE, fig.width=6, fig.height=6, fig.keep='last', out.width='.5\\textwidth', dev='pdf', fig.align='center'>>=
+gseaplot(y, geneSetID = "5751548")
+@
+\caption{Down-regulated "mRNA splicing" pathway}
+\label{fig:gsea-path-down}
+\end{figure}
+
+\begin{figure}[!h]
+<<gsea-path-up, echo=FALSE, fig.width=6, fig.height=6, fig.keep='last', out.width='.5\\textwidth', dev='pdf', fig.align='center'>>=
+gseaplot(y, geneSetID = "5751488")
+@
+\caption{Up-regulated "glucose metabolism" pathway}
+\label{fig:gsea-path-up}
+\end{figure}
+
+
+%' \begin{figure}[!h]
+%' <<glucose-network, echo=FALSE, fig.width=6, fig.height=6, fig.keep='last', out.width='.5\\textwidth', dev='pdf', fig.align='center'>>=
+%' library("graphite")
+%' pn="Glucose metabolism"
+%' viewPathway(pn, organism = "celegans",
+%'             readable=TRUE, foldChange=foldChange)
+%' @
+%' \caption{Up-regulated "glucose metabolism" pathway}
+%' \label{fig:gsea-path-net-down}
+%' \end{figure}
+%'
+%'
+%' \begin{figure}[!h]
+%' <<splicing-network, echo=FALSE, fig.width=6, fig.height=6, fig.keep='last', out.width='.5\\textwidth', dev='pdf', fig.align='center'>>=
+%' pn="mRNA Splicing"
+%' viewPathway(pn, organism = "celegans",
+%'             readable=TRUE, foldChange=foldChange)
+%' @
+%' % \caption{Down-regulated "mRNA splicing" pathway}
+%' \caption{Down-regulated "mRNA Splicing - Minor Pathway" pathway}
+%' \label{fig:gsea-path-net-up}
+%' \end{figure}
+
+
+
+
+<<KEGG-glycolysis-figures>>=
+library("KEGGREST")
+mp <- keggConv("cel", "ncbi-geneid") # ~ 30 sec
+KEGGGENE <- mp[paste("ncbi-geneid:", names(foldChange), sep='')]
+# average duplicates
+foldChange.KG <- tapply(foldChange, as.factor(KEGGGENE), mean)
+nms <- names(foldChange.KG)
+dim(foldChange.KG) <- NULL # necessary for pathview internal testing
+names(foldChange.KG) <- sub("cel:", "", nms)
+library("pathview")
+pv.out <- pathview(gene.data = foldChange.KG,
+                   pathway.id = "00010",
+                   limit=list(gene=1, cpd=1),
+                   gene.idtype = "KEGG",
+                   species = "cel",
+                   out.suffix = "aging",
+                   kegg.native = TRUE)
+# pv.out <- pathview(gene.data = foldChange.KG,
+#                    pathway.id = "00010",
+#                    limit=list(gene=1, cpd=1),
+#                    gene.idtype = "KEGG",
+#                    species = "cel",
+#                    out.suffix = "aging",
+#                    kegg.native = FALSE)
+pv.out <- pathview(gene.data = foldChange.KG,
+                   pathway.id = "03040",
+                   limit=list(gene=1, cpd=1),
+                   gene.idtype = "KEGG",
+                   species = "cel",
+                   out.suffix = "aging",
+                   kegg.native = TRUE)
+# pv.out <- pathview(gene.data = foldChange.KG,
+#                    pathway.id = "03040",
+#                    limit=list(gene=1, cpd=1),
+#                    gene.idtype = "KEGG",
+#                    species = "cel",
+#                    out.suffix = "aging",
+#                    kegg.native = FALSE)
+@
+
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{{cel00010.aging}.png}
+    \caption{Glycolysis/Glyconeogenesis}
+    \label{fig:kegg-native-00010}
+\end{figure}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{{cel03040.aging}.png}
+    \caption{mRNA Splicing}
+    \label{fig:kegg-native-03040}
+\end{figure}
+%--------- end section ---------------------------------------------------------
+
+
+
+
+
+
+\section{Session information}
+All software and respective versions used in this document, as returned by sessionInfo() are detailed below.
+<<sessionInfo, results='asis', echo=FALSE>>=
+toLatex(sessionInfo())
+@
+
+%~~ References ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+\bibliographystyle{plainnat}
+\bibliography{celegans.aging}
+
+\end{document}
+
+
+
+
+
