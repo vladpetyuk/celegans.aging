@@ -7,16 +7,17 @@ Author: Vlad Petyuk
 Maintainer: Vlad Petyuk <vladislav.petyuk@pnnl.gov>
 Description: The packages introduces a collection of LC-MS/MS datasets
             obtained on Caenorhabditis elegans nematodes at different times
-            of their lifespan. The discovery of differentially abundant proteins
-            was performed using spectral counting approach. Interrogation of
-            common biological functions of the proteins with altered abundance
-            revealed up-regulation of DNA/RNA-related pathways and
-            down-regulation of metabolic pathways (e.g. glycolysis and
+            of their lifespan. The discovery of proteins differentially abundant
+            between the young and old ages was performed using spectral counting
+            approach. Interrogation of the common biological functions of the
+            proteins with altered abundance revealed up-regulation of
+            DNA/RNA-related pathways (e.g. cell cycle and mRNA splicing)
+            and down-regulation of metabolic pathways (e.g. glycolysis and
             glyconeogenesis)
 License: Artistic-2.0
 LazyData: TRUE
 Depends: R (>=3.2.0)
 Suggests: BiocStyle, knitr, rpx, jsonlite, xtable, MSnID, MSnbase, biomaRt,
-            msmsTests, GOstats, org.Ce.eg.db, ReactomePA (>=1.12.2),
-            DOSE (>=2.6.3), graphite, KEGGREST, pathview
+            msmsTests, GOstats, org.Ce.eg.db, ReactomePA (>=1.13.2),
+            DOSE (>=2.7.6), graphite, KEGGREST, pathview
 VignetteBuilder: knitr
