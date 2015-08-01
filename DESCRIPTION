@@ -16,8 +16,8 @@ Description: The packages introduces a collection of LC-MS/MS datasets
             glyconeogenesis)
 License: Artistic-2.0
 LazyData: TRUE
-Depends: R (>=3.2.0)
+Depends: R (>= 3.2.0)
 Suggests: BiocStyle, knitr, rpx, jsonlite, xtable, MSnID, MSnbase, biomaRt,
-            msmsTests, GOstats, org.Ce.eg.db, ReactomePA (>=1.13.2),
-            DOSE (>=2.7.6), graphite, KEGGREST, pathview
+            msmsTests, GOstats, org.Ce.eg.db, ReactomePA (>= 1.13.2),
+            DOSE (>= 2.7.6), graphite, KEGGREST, pathview
 VignetteBuilder: knitr
