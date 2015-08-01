@@ -242,6 +242,23 @@ mset <- combineFeatures(mset, groupBy = fData(mset)$accession,
 @
 The peptides counts were summed within each gene. Only uniquely mapping peptides
 used for gene abundance estimated. The final number of genes that contained unique peptides is \textbf{\Sexpr{nrow(mset)}}.
+
+
+%' <<toMSnSet_symbols, message=FALSE>>=
+%' library("org.Ce.eg.db")
+%' mp <- as.list(org.Ce.egSYMBOL[as.character(prj$entrezgene)])
+%' prj$accession <- sapply(mp, '[', 1)
+%' mset2 <- as(prj, "MSnSet")
+%' # take care of pheno data
+%' sampleNames(mset2) <- sub('.mzML', '', sampleNames(mset2), fixed=T)
+%' pData(mset2) <- meta[sampleNames(mset2),]
+%' sampleNames(mset2) <- pData(mset2)$sampleName
+%' # roll-up to gene level
+%' mset2 <- combineFeatures(mset2, groupBy = fData(mset2)$accession,
+%'                         fun = 'sum', cv=F, redundancy.handler = 'unique')
+%' @
+
+
 %--------- end section ---------------------------------------------------------
 
 
@@ -537,6 +554,7 @@ nms <- names(foldChange.KG)
 dim(foldChange.KG) <- NULL # necessary for pathview internal testing
 names(foldChange.KG) <- sub("cel:", "", nms)
 library("pathview")
+library("XML")
 pv.out <- pathview(gene.data = foldChange.KG,
                    pathway.id = "00010",
                    limit=list(gene=1, cpd=1),
